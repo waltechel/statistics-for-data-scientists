@@ -8,6 +8,8 @@ library(corrplot)
 library(descr)
 library(ggplot2)
 
+rm(list = ls())
+
 PSDS_PATH <- file.path(getwd())
 PSDS_PATH
 
