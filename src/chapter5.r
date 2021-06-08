@@ -6,27 +6,44 @@ library(mgcv)
 library(rpart)
 library(klaR)
 
-options(width=80)
+rm(list=ls())
 
+options(width=80)
+getwd()
+PSDS_PATH <- file.path(getwd())
+PSDS_PATH
 
 ## Import datasets needed for chapter 5
-PSDS_PATH <- file.path('~', 'statistics-for-data-scientists')
 
 loan3000 <- read.csv(file.path(PSDS_PATH, 'data', 'loan3000.csv'))
+head(loan3000, 2)
 loan_data <- read.csv(file.path(PSDS_PATH, 'data', 'loan_data.csv'))
+head(loan_data, 2)
 loan_data$outcome <- ordered(loan_data$outcome, levels=c('paid off', 'default'))
+sum(loan_data$outcome == 'default')
+length(loan_data$outcome)
 full_train_set <- read.csv(file.path(PSDS_PATH, 'data', 'full_train_set.csv'))
+head(full_train_set, 2)
 full_train_set$outcome <- ordered(full_train_set$outcome, levels=c('paid off', 'default'))
+sum(full_train_set$outcome == 'default')
+length(full_train_set$outcome)
+
 
 ## Naive Bayes
+# 나이브 베이즈 알고리즘은 주어진 결과에 대해 예측변수 값을 관찰할 확률을 사용하여
+# 예측변수가 주어졌을 때 결과 Y = i를 관찰할 확률을 추정한다.
+# 결과가 주어졌을 때 예측변수 벡터의 정확한 조건부 확률은 각 조건부확률의
+# P(Xj | Y = i) 의 곱으로 충분히 잘 추정할 수 있다는 단순한 가정을 기초로 하기 때문이다.
+# P(A | B)
 naive_model <- NaiveBayes(outcome ~ purpose_ + home_ + emp_len_, 
                           data = na.omit(loan_data))
 naive_model$table
 
 new_loan <- loan_data[147, c('purpose_', 'home_', 'emp_len_')]
-row.names(new_loan) <- NULL
+# row.names(new_loan) <- NULL
 new_loan
 
+# 이 경우 모델은 default(연체)가 예상된다.
 predict(naive_model, new_loan)
 
 ## example not in book
@@ -34,7 +51,7 @@ less_naive <- NaiveBayes(outcome ~ borrower_score + payment_inc_ratio +
                            purpose_ + home_ + emp_len_, data = loan_data)
 less_naive$table[1:2]
 
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_naive_bayes.png'),  width = 4, height=3, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_naive_bayes.png'),  width = 4, height=3, units='in', res=300)
 
 stats <- less_naive$table[[1]]
 ggplot(data.frame(borrower_score=c(0,1)), aes(borrower_score)) +
@@ -43,23 +60,27 @@ ggplot(data.frame(borrower_score=c(0,1)), aes(borrower_score)) +
   stat_function(fun = dnorm, color='red', linetype=2, 
                 arg=list(mean=stats[2, 1], sd=stats[2, 2])) +
   labs(y='probability')
-dev.off()
+# dev.off()
 
-#
+# 5.2. 판별분석
+# 선형판별분석(LDA) : linear discriminant analysis
 ## Code for LDA
 loan_lda <- lda(outcome ~ borrower_score + payment_inc_ratio,
                 data=loan3000)
 loan_lda$scaling
 
 ## Code snippet 4.2
+# lda 함수를 이용해 다음과 같이 상환과 연체에 대한 확률을 계산할 수 있다.
 pred <- predict(loan_lda)
 head(pred$posterior)
 
 
 ## LDA
 ## Code for Figure 5-1
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0501.png'),  width = 4, height=3, units='in', res=300)
-
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0501.png'),  width = 4, height=3, units='in', res=300)
+# 다음 그래프는 체납에 대한 확률값을 그래프로 시각화한 것이다.
+# 판별결과 얻은 가중치를 이용해서 LDA는 실선을 이용해 예측변수 영역을 두 부분으로 나눈다.
+# 직선에서 멀리 떨어진 예측 결과일수록 신뢰도가 높다.
 pred <- predict(loan_lda)
 lda_df <- cbind(loan3000, prob_default=pred$posterior[,'default'])
 
@@ -77,47 +98,63 @@ ggplot(data=lda_df, aes(x=borrower_score, y=payment_inc_ratio, color=prob_defaul
   geom_line(data=lda_df0, col='green', size=2, alpha=.8) +
   theme_bw()
 
-dev.off()
 
+# dev.off()
 
+# 5.3. 로지스틱 회귀
 ## Logistic regression
+# 로짓 : 어떤 클래스에 속할 확률을 결정하는 함수
+# 오즈 : 실패에 대한 성공의 비율
+# 오즈비 : 사건이 발생할 확률을 사건이 발생하지 않은 확률로 나눈 비율이다.
+# 예를 들어 어떤 말이 이길 확률이 0.5라면 이기지 못할 확률은 0.5 이고
+# 오즈비는 : 0.5 / 0.5 = 1이 된다.
+# 오즈(Y = 1) = p / (1 - p)
+# p = 오즈 / (1 + 오즈)
+
+head(loan_data, 2)
+head(loan_data$outcome, 2)
 logistic_model <- glm(outcome ~ payment_inc_ratio + purpose_ + 
                         home_ + emp_len_ + borrower_score,
                       data=loan_data, family='binomial')
 logistic_model
 summary(logistic_model)
+exp(logistic_model$coefficients[2])
 
 p <- seq(from=0.01, to=.99, by=.01)
 df <- data.frame(p = p ,
                  logit = log(p/(1-p)),
                  odds = p/(1-p))
+head(df)
 ## Figure 5-2
 
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0502.png'),  width = 5, height=4, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0502.png'),  width = 5, height=4, units='in', res=300)
 ggplot(data=df, aes(x=p, y=logit)) +
   geom_line() +
   labs(x = 'p', y='logit(p)') +
   theme_bw()
-dev.off()
+# dev.off()
 
 ## Figure 5-3
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0503.png'),  width = 5, height=4, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0503.png'),  width = 5, height=4, units='in', res=300)
+
+# logistic model로부터 얻은 예측값
+pred <- predict(logistic_model)
+# summary(pred)
+
+# 확률값으로 변환
+prob <- 1 / (1 + exp(-pred))
+summary(prob)
+# 중앙값이나 mean을 기준으로 연체와 납부를 판정할 수 있다.
+
 ggplot(data=df, aes(x=logit, y=odds)) +
   geom_line() +
   labs(x = 'log(odds ratio)', y='odds ratio') +
   ylim(1, 100) +
   xlim(0, 5) +
   theme_bw()
-dev.off()
+# dev.off()
 
-
-pred <- predict(logistic_model)
-summary(pred)
-
-prob <- 1/(1 + exp(-pred))
-summary(prob)
-#
-
+# 5.3.7. 모델 평가하기기
 logistic_gam <- gam(outcome ~ s(payment_inc_ratio) + purpose_ + 
                       home_ + emp_len_ + s(borrower_score),
                     data=loan_data, family='binomial')
@@ -131,7 +168,7 @@ df <- data.frame(payment_inc_ratio = loan_data[, 'payment_inc_ratio'],
   
 
 ## Code for Figure 5-4
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0504.png'),  width = 5, height=4, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0504.png'),  width = 5, height=4, units='in', res=300)
 
 ggplot(df, aes(x=payment_inc_ratio, y=partial_resid, solid = FALSE)) +
   geom_point(shape=46, alpha=.4) +
@@ -141,12 +178,18 @@ ggplot(df, aes(x=payment_inc_ratio, y=partial_resid, solid = FALSE)) +
   xlim(0, 25) +
   theme_bw()
 
-dev.off()
+# dev.off()
 
-
+# 분류 모델 평가하기
+# 날씨 맞추기 사례(365일이 모두 맑다)에 비추어볼 때 
+# 상환하지 못할 확률이 더 높다고 가정하는 것은 
+# 예측력을 높이는 것 같은 착시효과를 가져올 수 있다.
 # Confusion matrix
 pred <- predict(logistic_gam, newdata=loan_data)
 pred_y <- as.numeric(pred > 0)
+sum(pred_y) / length(pred)
+# 
+
 true_y <- as.numeric(loan_data$outcome=='default')
 true_pos <- (true_y==1) & (pred_y==1)
 true_neg <- (true_y==0) & (pred_y==0)
@@ -158,16 +201,34 @@ colnames(conf_mat) <- c('Yhat = 1', 'Yhat = 0')
 rownames(conf_mat) <- c('Y = 1', 'Y = 0')
 conf_mat
 
-# precision
+# accuracy
+# 정확도 : TN + TP / TN + TP + FP + FN
 conf_mat[1,1]/sum(conf_mat[,1])
+(sum(true_pos) + sum(true_neg)) / (sum(true_pos) + sum(true_neg) + sum(false_pos) + sum(false_neg))
 # recall
+# 재현율 : TP / TP + FN = TPR
 conf_mat[1,1]/sum(conf_mat[1,])
-# specificity
+(sum(true_pos)) / (sum(true_pos) + sum(false_neg))
+# specificity 
+# 특이도 : TN / TN + FP = TNR
 conf_mat[2,2]/sum(conf_mat[2,])
+(sum(true_neg)) / (sum(true_neg) + sum(false_pos))
+
+# F1 : precision와 recall의 조화 평균
+f1_score <- 2 / ((1 / (sum(true_pos)/(sum(true_pos) + sum(false_neg)) ) ) + (1 / (conf_mat[1,1]/sum(conf_mat[1,]))))
+f1_score
+
+library(caret)
+?confusionMatrix()
 
 ## Code for Figure 5-6
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0506.png'),  width = 4, height=4, units='in', res=300)
-
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0506.png'),  width = 4, height=4, units='in', res=300)
+# ROC 커브
+# ROC : 거짓 양성 비율(FPR) 에 대한 진짜 양성 비율(TPR)의 곡선
+# ROC : 재현율 에 대한 1 - 특이도 그래프 이다.
+# ROC = FPR / TPR
+# FPR = FP / FP + TN = 1 - (TN / (FP + TN)) = 1 - TNR
+# (1 - TNR) / TPR
 idx <- order(-pred)
 recall <- cumsum(true_y[idx]==1)/sum(true_y==1)
 specificity <- (sum(true_y==0) - cumsum(true_y[idx]==0))/sum(true_y==0)
@@ -180,10 +241,10 @@ ggplot(roc_df, aes(x=specificity, y=recall)) +
             linetype='dotted', color='red') +
   theme_bw()
 
-dev.off()
+# dev.off()
 
 ## Code for Figure 5-7
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0507.png'),  width = 4, height=4, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0507.png'),  width = 4, height=4, units='in', res=300)
 
 ggplot(roc_df, aes(specificity)) +
   geom_ribbon(aes(ymin=0, ymax=recall), fill='blue', alpha=.3) +
@@ -192,29 +253,42 @@ ggplot(roc_df, aes(specificity)) +
   labs(y='recall') +
   theme_bw()
 
-dev.off()
+# dev.off()
 
 ## AUC calculation
+# 수치 적분을 이용해서도 구할 수 있다고 한다!
 sum(roc_df$recall[-1] * diff(1-roc_df$specificity))
 head(roc_df)
 
 
+# 5.5. 불균형 데이터 다루기
+# 과소표본 : 분류 모델에서 개수가 많은 클래스 데이터 중 일부 소수만 사용하는 것
+# 과잉표본 : 분류 모델에서 개수가 적은 클래스 데이터를 부트스트랩을 활용해서 많이 사용하는 것
 ## Code for Undersampling
 mean(full_train_set$outcome=='default')
+mean(loan_data$outcome=='default')
 
 full_model <- glm(outcome ~ payment_inc_ratio + purpose_ + 
                     home_ + emp_len_+ dti + revol_bal + revol_util,
-                  data=full_train_set, family='binomial')
+                  data=loan_data, family='binomial')
 pred <- predict(full_model)
 mean(pred > 0)
+# 편항이 발생한다.
 
 ## Code for oversampling/up weighting
+# 가중치를 줘서 확률을 높인다.
+
 wt <- ifelse(full_train_set$outcome=='default', 1/mean(full_train_set$outcome == 'default'), 1)
 full_model <- glm(outcome ~ payment_inc_ratio + purpose_ + 
                     home_ + emp_len_+ dti + revol_bal + revol_util,
                   data=full_train_set, weight=wt, family='quasibinomial')
 pred <- predict(full_model)
 mean(pred > 0)
+
+# #############################################################
+# 여기서부터는 필요가 없다.
+###############################################################
+# JUNK 
 
 ## SMOTE example (data generation); code not in book. This no longer works for some reason
 library(unbalanced)
@@ -257,15 +331,15 @@ loan_fits <- rbind(lda_pred,
 
 
 ## Code for Figure 5-8
-png(filename=file.path(PSDS_PATH, 'figures', 'psds_0508.png'),  width = 6, height=4, units='in', res=300)
+# png(filename=file.path(PSDS_PATH, 'figures', 'psds_0508.png'),  width = 6, height=4, units='in', res=300)
 ggplot(data=loan_fits, aes(x=borrower_score, y=payment_inc_ratio, color=method, linetype=method)) +
   geom_line(size=1.5) +
   theme(legend.key.width = unit(2,"cm")) +
   guides(linetype = guide_legend(override.aes = list(size = 1)))
-dev.off()
+# dev.off()
 
-###############################################################
-# JUNK 
+
+
 ggplot(roc_df, aes(specificity)) +
   geom_ribbon(aes(ymin=0, ymax=recall), fill='blue', alpha=.3) +
   scale_x_reverse(expand=c(0, 0)) +
